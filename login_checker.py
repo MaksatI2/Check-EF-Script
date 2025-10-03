@@ -34,7 +34,6 @@ if missing_vars:
     sys.exit(1)
 
 print("✅ Все переменные окружения загружены")
-print(f"📧 Email: {EMAIL}")
 print(f"🔗 Login URL: {LOGIN_URL}")
 print(f"📊 Prometheus port: {PROMETHEUS_PORT}")
 
@@ -118,7 +117,6 @@ async def main():
     print("🤖 Login Checker Bot запущен")
     print(f"📊 Prometheus метрики на порту {PROMETHEUS_PORT}")
     print(f"🌍 Сервер: {LOGIN_URL}")
-    print(f"📧 Email: {EMAIL}")
     print(f"⏰ Интервал проверки: 1 минута")
     print("=" * 60)
     
@@ -137,7 +135,6 @@ async def main():
     print("✅ Планировщик запущен")
     
     await send_telegram("🚀 *Бот запущен и мониторинг начат*\n\n"
-                       f"📧 Email: `{EMAIL}`\n"
                        f"🌍 URL: `{LOGIN_URL}`\n"
                        f"⏰ Интервал: каждую минуту")
     
