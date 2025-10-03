@@ -1,0 +1,80 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Create .env file
+        run: |
+          cat << EOF > .env
+          LOGIN_URL=${{ secrets.LOGIN_URL }}
+          EMAIL=${{ secrets.EMAIL }}
+          PASSWORD=${{ secrets.PASSWORD }}
+          TELEGRAM_TOKEN=${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID=${{ secrets.CHAT_ID }}
+          GROUP_ID=${{ secrets.GROUP_ID }}
+          PROMETHEUS_PORT=8000
+          EOF
+
+      - name: Copy files to server
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: 22
+          source: "."
+          target: "/home/${{ secrets.SERVER_USER }}/login-checker"
+          rm: false
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: 22
+          script: |
+            cd /home/manastraining_kg/login-checker
+            
+            # Остановить старые контейнеры если есть
+            docker-compose down 2>/dev/null || true
+            
+            # Собрать и запустить новые контейнеры
+            docker-compose up -d --build
+            
+            # Показать статус
+            docker-compose ps
+            
+            # Показать последние логи
+            docker-compose logs --tail=20
+
+      - name: Wait for services
+        run: sleep 30
+
+      - name: Notify on Success
+        if: success()
+        run: |
+          curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.GROUP_ID }}" \
+            -d "text=✅ Деплой успешно завершен!%0AСервер: ${{ secrets.SERVER_HOST }}%0AКоммит: ${{ github.sha }}" \
+            -d "parse_mode=HTML"
+
+      - name: Notify on Failure
+        if: failure()
+        run: |
+          curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.GROUP_ID }}" \
+            -d "text=❌ Деплой провалился!%0AПроверьте логи GitHub Actions%0AРепозиторий: ${{ github.repository }}" \
+            -d "parse_mode=HTML"
