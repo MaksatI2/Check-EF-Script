@@ -12,7 +12,7 @@ scrape_configs:
         labels:
           service: 'login-monitoring'
           app: 'login-checker'
-    scrape_interval: 10s
+    scrape_interval: 10m
     scrape_timeout: 5s
     
   - job_name: 'prometheus'

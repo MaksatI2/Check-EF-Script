@@ -50,7 +50,7 @@ async def send_telegram(msg):
 
 
 async def check_login():
-    """Асинхронная проверка логина и отправка отчета в Telegram."""
+    """Асинхронная проверка логина и отправка отчета в Telegram только при ошибках."""
     print(f"🔍 Проверка логина в {datetime.datetime.now()}")
     
     timestamp_start = datetime.datetime.now()
@@ -66,18 +66,8 @@ async def check_login():
         elapsed = time.time() - start_time
 
         if response.status_code == 200:
-            data = response.json()
-            token = data.get("token", "нет токена")
             LOGIN_ATTEMPTS.labels(status='success').inc()
             SERVICE_UP.set(1)
-            
-            msg = (
-                f"🟢 *Успешный вход*\n"
-                f"⏱ Время начала: `{timestamp_start.strftime('%Y-%m-%d %H:%M:%S')}`\n"
-                f"⏱ Время окончания: `{timestamp_end.strftime('%Y-%m-%d %H:%M:%S')}`\n"
-                f"⏳ Длительность: `{elapsed:.2f} сек.`\n"
-                f"📧 Email: `{EMAIL}`\n"
-            )
             print(f"✅ Успешный логин (status: 200, время: {elapsed:.2f}s)")
         else:
             LOGIN_ATTEMPTS.labels(status='error').inc()
@@ -92,6 +82,7 @@ async def check_login():
                 f"📄 Ответ сервера:\n```{response.text[:500]}```"
             )
             print(f"❌ Ошибка логина (status: {response.status_code}, время: {elapsed:.2f}s)")
+            await send_telegram(msg)
 
     except requests.exceptions.RequestException as e:
         timestamp_end = datetime.datetime.now()
@@ -107,17 +98,15 @@ async def check_login():
             f"❌ Ошибка: `{str(e)[:200]}`"
         )
         print(f"⚠️ Ошибка подключения: {e}")
-
-    await send_telegram(msg)
+        await send_telegram(msg)
 
 
 async def main():
-    """Главная функция с планировщиком."""
     print("=" * 60)
-    print("🤖 Login Checker Bot запущен")
-    print(f"📊 Prometheus метрики на порту {PROMETHEUS_PORT}")
-    print(f"🌍 Сервер: {LOGIN_URL}")
-    print(f"⏰ Интервал проверки: 1 минута")
+    print("Login Checker Bot запущен")
+    print(f"Prometheus метрики на порту {PROMETHEUS_PORT}")
+    print(f"Сервер: {LOGIN_URL}")
+    print(f"Интервал проверки: 30 минут")
     print("=" * 60)
     
     try:
@@ -130,13 +119,13 @@ async def main():
     tz = timezone('Asia/Bishkek')
     
     scheduler = AsyncIOScheduler(timezone=tz)
-    scheduler.add_job(check_login, 'interval', minutes=1)
+    scheduler.add_job(check_login, 'interval', minutes=30)
     scheduler.start()
     print("✅ Планировщик запущен")
     
-    await send_telegram("🚀 *Бот запущен и мониторинг начат*\n\n"
-                       f"🌍 URL: `{LOGIN_URL}`\n"
-                       f"⏰ Интервал: каждую минуту")
+    await send_telegram("*Бот запущен и мониторинг начат*\n\n"
+                       f"URL: `{LOGIN_URL}`\n"
+                       f"Интервал: каждые 30 минут\n")
     
     print("🔄 Выполняю первую проверку...")
     await check_login()
