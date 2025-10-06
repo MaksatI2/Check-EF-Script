@@ -94,7 +94,7 @@ docker-compose down
 |--------|-----|----------|
 | **Prometheus** | http://localhost:9091 | Метрики и мониторинг |
 | **Grafana** | http://localhost:3001 | Дашборды визуализации |
-| **Login Checker** | http://localhost:8001 | Эндпоинт метрик |
+| **Login Checker** | http://localhost:8000 | Эндпоинт метрик |
 
 **Grafana credentials:** admin / admin
 
