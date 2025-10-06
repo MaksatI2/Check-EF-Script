@@ -8,6 +8,14 @@ from pytz import timezone
 from prometheus_client import start_http_server, Counter, Histogram, Gauge
 import os
 import sys
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
 
 LOGIN_ATTEMPTS = Counter('login_attempts_total', 'Total login attempts', ['status'])
 LOGIN_DURATION = Histogram('login_duration_seconds', 'Login request duration')
@@ -30,28 +38,26 @@ required_vars = {
 
 missing_vars = [var for var, value in required_vars.items() if not value]
 if missing_vars:
-    print(f"❌ ОШИБКА: Отсутствуют переменные окружения: {', '.join(missing_vars)}")
+    logger.error(f"❌ ОШИБКА: Отсутствуют переменные окружения: {', '.join(missing_vars)}")
     sys.exit(1)
 
-print("✅ Все переменные окружения загружены")
-print(f"🔗 Login URL: {LOGIN_URL}")
-print(f"📊 Prometheus port: {PROMETHEUS_PORT}")
+logger.info("✅ Все переменные окружения загружены")
+logger.info(f"🔗 Login URL: {LOGIN_URL}")
+logger.info(f"📊 Prometheus port: {PROMETHEUS_PORT}")
 
 bot = Bot(token=TELEGRAM_TOKEN)
 
 
 async def send_telegram(msg):
-    """Отправка сообщения в Telegram."""
     try:
         await bot.send_message(chat_id=GROUP_ID, text=msg, parse_mode="Markdown")
-        print(f"✅ Сообщение отправлено в {datetime.datetime.now()}")
+        logger.info(f"✅ Сообщение отправлено в {datetime.datetime.now()}")
     except Exception as e:
-        print(f"❌ Ошибка отправки в Telegram: {e}")
+        logger.error(f"❌ Ошибка отправки в Telegram: {e}")
 
 
 async def check_login():
-    """Асинхронная проверка логина и отправка отчета в Telegram только при ошибках."""
-    print(f"🔍 Проверка логина в {datetime.datetime.now()}")
+    logger.info(f"🔍 Проверка логина в {datetime.datetime.now()}")
     
     timestamp_start = datetime.datetime.now()
     start_time = time.time()
@@ -68,7 +74,7 @@ async def check_login():
         if response.status_code == 200:
             LOGIN_ATTEMPTS.labels(status='success').inc()
             SERVICE_UP.set(1)
-            print(f"✅ Успешный логин (status: 200, время: {elapsed:.2f}s)")
+            logger.info(f"✅ Успешный логин (status: 200, время: {elapsed:.2f}s)")
         else:
             LOGIN_ATTEMPTS.labels(status='error').inc()
             SERVICE_UP.set(0)
@@ -81,7 +87,7 @@ async def check_login():
                 f"⚠️ Статус: {response.status_code}\n"
                 f"📄 Ответ сервера:\n```{response.text[:500]}```"
             )
-            print(f"❌ Ошибка логина (status: {response.status_code}, время: {elapsed:.2f}s)")
+            logger.error(f"❌ Ошибка логина (status: {response.status_code}, время: {elapsed:.2f}s)")
             await send_telegram(msg)
 
     except requests.exceptions.RequestException as e:
@@ -97,8 +103,11 @@ async def check_login():
             f"⏳ Длительность: `{elapsed:.2f} сек.`\n"
             f"❌ Ошибка: `{str(e)[:200]}`"
         )
-        print(f"⚠️ Ошибка подключения: {e}")
+        logger.error(f"⚠️ Ошибка подключения: {e}")
         await send_telegram(msg)
+    except Exception as e:
+        logger.error(f"❌ Неожиданная ошибка в check_login: {e}")
+        SERVICE_UP.set(0)
 
 
 async def main():
@@ -111,9 +120,9 @@ async def main():
     
     try:
         start_http_server(PROMETHEUS_PORT)
-        print(f"✅ HTTP сервер для метрик запущен на порту {PROMETHEUS_PORT}")
+        logger.info(f"✅ HTTP сервер для метрик запущен на порту {PROMETHEUS_PORT}")
     except Exception as e:
-        print(f"❌ Ошибка запуска HTTP сервера: {e}")
+        logger.error(f"❌ Ошибка запуска HTTP сервера: {e}")
         sys.exit(1)
     
     tz = timezone('Asia/Bishkek')
@@ -121,29 +130,32 @@ async def main():
     scheduler = AsyncIOScheduler(timezone=tz)
     scheduler.add_job(check_login, 'interval', minutes=30)
     scheduler.start()
-    print("✅ Планировщик запущен")
+    logger.info("✅ Планировщик запущен")
     
     await send_telegram("*Бот запущен и мониторинг начат*\n\n"
                        f"URL: `{LOGIN_URL}`\n"
                        f"Интервал: каждые 30 минут\n")
     
-    print("🔄 Выполняю первую проверку...")
+    logger.info("🔄 Выполняю первую проверку...")
     await check_login()
     
     try:
-        print("✅ Бот работает. Нажмите Ctrl+C для остановки")
+        logger.info("✅ Бот работает. Нажмите Ctrl+C для остановки")
         while True:
             await asyncio.sleep(3600)
     except (KeyboardInterrupt, SystemExit):
-        print("\n🛑 Получен сигнал остановки...")
+        logger.info("\n🛑 Получен сигнал остановки...")
         scheduler.shutdown()
         await send_telegram("🛑 *Бот остановлен*")
-        print("✅ Бот успешно остановлен")
+        logger.info("✅ Бот успешно остановлен")
+    except Exception as e:
+        logger.error(f"❌ Критическая ошибка в main: {e}")
+        await send_telegram(f"🛑 *Бот аварийно остановлен*\nОшибка: `{str(e)[:200]}`")
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except Exception as e:
-        print(f"❌ Критическая ошибка: {e}")
+        logger.error(f"❌ Критическая ошибка при запуске: {e}")
         sys.exit(1)
